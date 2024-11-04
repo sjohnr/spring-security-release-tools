@@ -2,7 +2,6 @@ name: 'Auto Merge Forward'
 description: 'Automatically merge commits from older branches into more recents ones'
 author: 'marcusdacoregio'
 
-# Define your inputs here.
 inputs:
   from-author:
     description: 'Only merge if all commits match the author'
@@ -11,7 +10,7 @@ inputs:
   use-author-email:
     description: 'Whether to use author email to check if the author matches, defaults to author name'
     required: false
-    default: false
+    default: 'false'
   branches:
     description: 'The branches to merge, from oldest to newest, separated by comma'
     required: true
@@ -22,8 +21,57 @@ inputs:
   dry-run:
     description: 'Whether to push the changes'
     required: false
-    default: false
+    default: 'false'
 
 runs:
-  using: node20
-  main: dist/index.js
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+    - shell: bash
+      run: |
+        # Gather inputs
+        fromAuthor="${{ inputs.from-author }}"
+        branches="${{ inputs.branches }}"
+        mergeStrategy="${{ inputs.merge-strategy }}"
+        dryRun="${{ inputs.dry-run }}"
+        logFormat="${{ inputs.use-author-email == 'true' && '%ae' || '%an' }}
+        ref="${{ github.ref }}"
+        
+        # Determine branch name from github.ref and fully fetch
+        originBranch=${ref/refs\/heads\//}
+        git fetch origin $originBranch --unshallow
+        
+        # Loop over target branches and create local branches
+        for branch in $(echo $branches | tr "," "\n") ; do
+          git fetch origin $branch
+          git switch $branch
+          git switch -
+        end
+        
+        # Merge successive unmerged branches
+        previousBranch=""
+        for currentBranch in $(echo $branches | tr "," "\n") ; do
+          if [[ ! -z "$previousBranch" ]] ; then
+            # Pull unique set of authors by name or email
+            authors=$(git log $previousBranch ^$currentBranch --format=$logFormat --no-merges | sort | uniq)
+            numAuthors=$(git log $previousBranch ^$currentBranch --format=$logFormat --no-merges | sort | uniq | wc -l | xargs echo)
+            echo "Found $numAuthors unique commit actors in $previousBranch that are not present in $currentBranch"
+            if [[ "$numAuthors" -eq 1 ]] && [[ "$authors" -eq "$fromAuthor" ]] ; then
+              echo "Merging $previousBranch into $currentBranch using $mergeStrategy strategy"
+              git switch $currentBranch
+              git merge $previousBranch -s $mergeStrategy --no-edit
+            elif [[ "$numAuthors" -eq 1 ]] ; then
+              echo "Aborting auto-merge because expected author $fromAuthor not found" && exit 1
+            elif [[ "$numAuthors" -gt 1 ]] ; then
+              echo "Aborting auto-merge because there are multiple authors" && exit 1
+            fi
+          fi
+          previousBranch=$currentBranch
+        done
+        
+        # Push branches if enabled
+        if [[ "$dryRun" -eq "true" ]] ; then
+          echo "Dry-run is true, not invoking push this time"
+        else
+          git push --atomic origin ${branches//,/ }
+        fi
