@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 17
-        uses: spring-io/spring-gradle-build-action@v2
+        uses: sjohnr/spring-gradle-build-action@v2
       - name: Publish Plugins
         env:
           ORG_GRADLE_PROJECT_signingKey: ${{ secrets.GPG_PRIVATE_KEY }}

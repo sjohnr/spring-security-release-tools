@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK ${{ inputs.java-version }}
-        uses: spring-io/spring-gradle-build-action@v2
+        uses: sjohnr/spring-gradle-build-action@v2
         with:
           java-version: ${{ inputs.java-version }}
           distribution: ${{ inputs.distribution }}
